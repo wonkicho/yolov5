@@ -340,7 +340,7 @@ def train(hyp, opt, device, callbacks):  # hyp is path/to/hyp.yaml or hyp dictio
                 if ni - last_opt_step >= accumulate:
                     
                     torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=10.0)  # clip gradients
-                    optimizer.step(optimizer)  # optimizer.step
+                    optimizer.step()  # optimizer.step
                     #scaler.update()
                     optimizer.zero_grad()
                     if ema:
