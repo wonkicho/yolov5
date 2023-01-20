@@ -305,7 +305,7 @@ def train(hyp, opt, device, callbacks):  # hyp is path/to/hyp.yaml or hyp dictio
                     imgs = nn.functional.interpolate(imgs, size=ns, mode='bilinear', align_corners=False)
 
             # Forward
-            if opt.amp:
+            if opt.amp == "True":
                 with torch.cuda.amp.autocast(amp):
                     pred = model(imgs)  # forward
                     loss, loss_items = compute_loss(pred, targets.to(device))  # loss scaled by batch_size
@@ -487,7 +487,7 @@ def parse_opt(known=False):
     parser.add_argument('--save-period', type=int, default=-1, help='Save checkpoint every x epochs (disabled if < 1)')
     parser.add_argument('--seed', type=int, default=0, help='Global training seed')
     parser.add_argument('--local_rank', type=int, default=-1, help='Automatic DDP Multi-GPU argument, do not modify')
-    parser.add_argument('--amp', default=True, help='Using Mixed Precision Traning')
+    parser.add_argument('--amp', type=str, default="True", help='Using Mixed Precision Traning')
 
     # Logger arguments
     parser.add_argument('--entity', default=None, help='Entity')
