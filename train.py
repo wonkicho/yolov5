@@ -305,27 +305,47 @@ def train(hyp, opt, device, callbacks):  # hyp is path/to/hyp.yaml or hyp dictio
                     imgs = nn.functional.interpolate(imgs, size=ns, mode='bilinear', align_corners=False)
 
             # Forward
-            with torch.cuda.amp.autocast(amp):
-                pred = model(imgs)  # forward
-                loss, loss_items = compute_loss(pred, targets.to(device))  # loss scaled by batch_size
+            if opt.amp:
+                with torch.cuda.amp.autocast(amp):
+                    pred = model(imgs)  # forward
+                    loss, loss_items = compute_loss(pred, targets.to(device))  # loss scaled by batch_size
+                    if RANK != -1:
+                        loss *= WORLD_SIZE  # gradient averaged between devices in DDP mode
+                    if opt.quad:
+                        loss *= 4.
+            
+
+                # Backward
+                scaler.scale(loss).backward()
+
+                # Optimize - https://pytorch.org/docs/master/notes/amp_examples.html
+                if ni - last_opt_step >= accumulate:
+                    scaler.unscale_(optimizer)  # unscale gradients
+                    torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=10.0)  # clip gradients
+                    scaler.step(optimizer)  # optimizer.step
+                    scaler.update()
+                    optimizer.zero_grad()
+                    if ema:
+                        ema.update(model)
+                    last_opt_step = ni
+            else:
+                pred = model(imgs)
+                loss, loss_items = compute_loss(pred, targets.to(device))
                 if RANK != -1:
-                    loss *= WORLD_SIZE  # gradient averaged between devices in DDP mode
+                        loss *= WORLD_SIZE  # gradient averaged between devices in DDP mode
                 if opt.quad:
                     loss *= 4.
-
-            # Backward
-            scaler.scale(loss).backward()
-
-            # Optimize - https://pytorch.org/docs/master/notes/amp_examples.html
-            if ni - last_opt_step >= accumulate:
-                scaler.unscale_(optimizer)  # unscale gradients
-                torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=10.0)  # clip gradients
-                scaler.step(optimizer)  # optimizer.step
-                scaler.update()
-                optimizer.zero_grad()
-                if ema:
-                    ema.update(model)
-                last_opt_step = ni
+                    
+                loss.backward()
+                if ni - last_opt_step >= accumulate:
+                    
+                    torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=10.0)  # clip gradients
+                    optimizer.step(optimizer)  # optimizer.step
+                    #scaler.update()
+                    optimizer.zero_grad()
+                    if ema:
+                        ema.update(model)
+                    last_opt_step = ni
 
             # Log
             if RANK in {-1, 0}:
@@ -467,6 +487,7 @@ def parse_opt(known=False):
     parser.add_argument('--save-period', type=int, default=-1, help='Save checkpoint every x epochs (disabled if < 1)')
     parser.add_argument('--seed', type=int, default=0, help='Global training seed')
     parser.add_argument('--local_rank', type=int, default=-1, help='Automatic DDP Multi-GPU argument, do not modify')
+    parser.add_argument('--amp', default=True, help='Using Mixed Precision Traning')
 
     # Logger arguments
     parser.add_argument('--entity', default=None, help='Entity')
